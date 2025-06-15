@@ -1,43 +1,45 @@
 import streamlit as st
+import papermill as pm
 import nbformat
-from nbclient import NotebookClient
-from nbformat.v4 import new_code_cell
-import base64
-import matplotlib
-matplotlib.use("Agg")
+from nbconvert import HTMLExporter
+import tempfile
+import os
 
-st.title("📊 Notebook Auto Runner - Full Output")
+st.title("📊 Notebook Runner with Papermill")
 
 uploaded_file = st.file_uploader("Upload notebook (.ipynb)", type=["ipynb"])
 
 if uploaded_file is not None:
-    nb = nbformat.read(uploaded_file, as_version=4)
+    # Tạo file tạm lưu input notebook
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".ipynb") as tmp_in:
+        tmp_in.write(uploaded_file.read())
+        input_path = tmp_in.name
 
-    nb.cells.insert(0, new_code_cell("%matplotlib inline"))
+    # Tạo file tạm lưu output notebook sau khi chạy xong
+    output_path = input_path.replace(".ipynb", "_executed.ipynb")
 
-    st.write("Đang chạy notebook...")
-    client = NotebookClient(nb, kernel_name="python3", timeout=600)
-    client.execute()
+    try:
+        st.info("Đang chạy notebook... ⏳")
 
-    st.success("Notebook chạy xong ✅")
+        # Thực thi notebook bằng papermill
+        pm.execute_notebook(input_path, output_path, kernel_name="python3")
 
-    for cell in nb.cells:
-        if cell.cell_type == 'markdown':
-            st.markdown(cell.source)
-        elif cell.cell_type == 'code':
-            outputs = cell.get('outputs', [])
-            for output in outputs:
-                if output.output_type in ['execute_result', 'display_data']:
-                    data = output.get('data', {})
+        st.success("Chạy notebook thành công ✅")
 
-                    if 'text/markdown' in data:
-                        st.markdown(data['text/markdown'])
-                    if 'text/plain' in data:
-                        st.code(data['text/plain'])
-                    if 'image/png' in data:
-                        img_bytes = base64.b64decode(data['image/png'])
-                        st.image(img_bytes)
-                    if 'image/svg+xml' in data:
-                        st.image(data['image/svg+xml'], format="svg")
-                    if 'text/html' in data:
-                        st.components.v1.html(data['text/html'], height=500, scrolling=True)
+        # Đọc output notebook đã thực thi
+        with open(output_path, 'r', encoding='utf-8') as f:
+            nb = nbformat.read(f, as_version=4)
+
+        # Render ra HTML bằng nbconvert
+        html_exporter = HTMLExporter()
+        (body, resources) = html_exporter.from_notebook_node(nb)
+
+        # Hiển thị HTML trong Streamlit
+        st.components.v1.html(body, height=1200, scrolling=True)
+
+    except Exception as e:
+        st.error(f"Có lỗi khi chạy notebook: {str(e)}")
+
+    # Xóa file tạm
+    os.remove(input_path)
+    os.remove(output_path)
