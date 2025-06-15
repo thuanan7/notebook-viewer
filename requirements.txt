@@ -1,0 +1,5 @@
+streamlit
+nbformat
+nbclient
+matplotlib
+Pillow
